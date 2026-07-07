@@ -28,7 +28,14 @@ jobs:
           echo '{"data":[]}' > data/posts.json
 
           PAGE=1
-          while [ -n "$URL" ] && [ "$URL" != "null" ]; do
+          PREV_URL=""
+          MAX_PAGES=20
+          while [ -n "$URL" ] && [ "$URL" != "null" ] && [ "$PAGE" -le "$MAX_PAGES" ]; do
+            if [ "$URL" == "$PREV_URL" ]; then
+              echo "Next-page URL repeated itself, stopping to avoid a loop."
+              break
+            fi
+
             echo "Fetching page $PAGE..."
             RESPONSE=$(curl -s "$URL")
 
@@ -43,10 +50,14 @@ jobs:
             jq -s '{data: (.[0].data + .[1])}' data/posts.json page.json > merged.json
             mv merged.json data/posts.json
 
-            # Follow pagination cursor, if there is a next page
+            PREV_URL="$URL"
             URL=$(echo "$RESPONSE" | jq -r '.paging.next // empty')
             PAGE=$((PAGE + 1))
           done
+
+          # Deduplicate by post id, just in case any page overlapped
+          jq -c '{data: (.data | unique_by(.id))}' data/posts.json > deduped.json
+          mv deduped.json data/posts.json
 
           rm -f page.json
           echo "Saved $(jq '.data | length' data/posts.json) posts to data/posts.json"
