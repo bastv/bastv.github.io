@@ -22,21 +22,34 @@ jobs:
         run: |
           set -e
           FIELDS="id,caption,media_type,media_url,permalink,thumbnail_url,timestamp"
-          URL="https://graph.instagram.com/me/media?fields=${FIELDS}&limit=12&access_token=${IG_ACCESS_TOKEN}"
-
-          echo "Fetching posts..."
-          RESPONSE=$(curl -s "$URL")
-
-          # Basic sanity check: bail out loudly if Instagram returned an error
-          if echo "$RESPONSE" | grep -q '"error"'; then
-            echo "Instagram API returned an error:"
-            echo "$RESPONSE"
-            exit 1
-          fi
+          URL="https://graph.instagram.com/me/media?fields=${FIELDS}&limit=100&access_token=${IG_ACCESS_TOKEN}"
 
           mkdir -p data
-          echo "$RESPONSE" > data/posts.json
-          echo "Saved $(echo "$RESPONSE" | grep -o '"id"' | wc -l) posts to data/posts.json"
+          echo '{"data":[]}' > data/posts.json
+
+          PAGE=1
+          while [ -n "$URL" ] && [ "$URL" != "null" ]; do
+            echo "Fetching page $PAGE..."
+            RESPONSE=$(curl -s "$URL")
+
+            if echo "$RESPONSE" | grep -q '"error"'; then
+              echo "Instagram API returned an error:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            # Merge this page's posts into the accumulated file
+            echo "$RESPONSE" | jq -c '.data // []' > page.json
+            jq -s '{data: (.[0].data + .[1])}' data/posts.json page.json > merged.json
+            mv merged.json data/posts.json
+
+            # Follow pagination cursor, if there is a next page
+            URL=$(echo "$RESPONSE" | jq -r '.paging.next // empty')
+            PAGE=$((PAGE + 1))
+          done
+
+          rm -f page.json
+          echo "Saved $(jq '.data | length' data/posts.json) posts to data/posts.json"
 
       - name: Commit updated posts.json
         run: |
