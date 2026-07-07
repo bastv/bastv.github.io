@@ -55,8 +55,9 @@ jobs:
             PAGE=$((PAGE + 1))
           done
 
-          # Deduplicate by post id, just in case any page overlapped
-          jq -c '{data: (.data | unique_by(.id))}' data/posts.json > deduped.json
+          # Deduplicate by post id (order-preserving), then sort newest-first
+          # to guarantee it matches the order shown on your Instagram profile
+          jq -c '{data: (.data | unique_by(.id) | sort_by(.timestamp) | reverse)}' data/posts.json > deduped.json
           mv deduped.json data/posts.json
 
           rm -f page.json
