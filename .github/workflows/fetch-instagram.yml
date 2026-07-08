@@ -21,7 +21,7 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
         run: |
           set -e
-          FIELDS="id,caption,media_type,media_url,permalink,thumbnail_url,timestamp"
+          FIELDS="id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,children{media_url,media_type,thumbnail_url}"
           URL="https://graph.instagram.com/me/media?fields=${FIELDS}&limit=100&access_token=${IG_ACCESS_TOKEN}"
 
           mkdir -p data
