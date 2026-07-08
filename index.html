@@ -196,7 +196,7 @@
     .lightbox.open {
       display: flex;
     }
-    .lightbox img {
+    .lightbox img, .lightbox video {
       max-width: 100%;
       max-height: 100%;
       border-radius: 6px;
@@ -282,7 +282,7 @@
   <div class="lightbox" id="lightbox">
     <div class="lightbox-close" id="lightboxClose">&times;</div>
     <div class="lightbox-arrow lightbox-prev" id="lightboxPrev">&#10094;</div>
-    <img id="lightboxImg" src="" alt="">
+    <div id="lightboxMedia"></div>
     <div class="lightbox-arrow lightbox-next" id="lightboxNext">&#10095;</div>
     <div class="lightbox-counter" id="lightboxCounter"></div>
   </div>
@@ -293,40 +293,56 @@
       const feedEl = document.getElementById('feed');
       const consoleBody = document.getElementById('consoleBody');
       const lightbox = document.getElementById('lightbox');
-      const lightboxImg = document.getElementById('lightboxImg');
+      const lightboxMedia = document.getElementById('lightboxMedia');
       const lightboxClose = document.getElementById('lightboxClose');
       const lightboxPrev = document.getElementById('lightboxPrev');
       const lightboxNext = document.getElementById('lightboxNext');
       const lightboxCounter = document.getElementById('lightboxCounter');
 
-      let currentImages = [];
+      let currentItems = []; // [{ type: 'image'|'video', src, poster }]
       let currentIndex = 0;
 
       function renderLightboxImage() {
-        lightboxImg.src = currentImages[currentIndex];
-        const multi = currentImages.length > 1;
+        lightboxMedia.innerHTML = '';
+        const item = currentItems[currentIndex];
+
+        if (item.type === 'video') {
+          const video = document.createElement('video');
+          video.src = item.src;
+          if (item.poster) video.poster = item.poster;
+          video.controls = true;
+          video.autoplay = true;
+          video.playsInline = true;
+          lightboxMedia.appendChild(video);
+        } else {
+          const img = document.createElement('img');
+          img.src = item.src;
+          lightboxMedia.appendChild(img);
+        }
+
+        const multi = currentItems.length > 1;
         lightboxPrev.style.display = multi ? 'flex' : 'none';
         lightboxNext.style.display = multi ? 'flex' : 'none';
-        lightboxCounter.textContent = multi ? (currentIndex + 1) + ' / ' + currentImages.length : '';
+        lightboxCounter.textContent = multi ? (currentIndex + 1) + ' / ' + currentItems.length : '';
       }
 
-      function openLightbox(images, startIndex) {
-        currentImages = images;
+      function openLightbox(items, startIndex) {
+        currentItems = items;
         currentIndex = startIndex || 0;
         renderLightboxImage();
         lightbox.classList.add('open');
       }
       function closeLightbox() {
         lightbox.classList.remove('open');
-        lightboxImg.src = '';
-        currentImages = [];
+        lightboxMedia.innerHTML = '';
+        currentItems = [];
       }
       function showPrev() {
-        currentIndex = (currentIndex - 1 + currentImages.length) % currentImages.length;
+        currentIndex = (currentIndex - 1 + currentItems.length) % currentItems.length;
         renderLightboxImage();
       }
       function showNext() {
-        currentIndex = (currentIndex + 1) % currentImages.length;
+        currentIndex = (currentIndex + 1) % currentItems.length;
         renderLightboxImage();
       }
 
@@ -430,12 +446,15 @@
               card.appendChild(stackBadge);
             }
 
-            // Build the list of images to click through in the lightbox
-            const galleryImages = isCarousel && children.length > 0
-              ? children.map(c => c.media_type === 'VIDEO' ? c.thumbnail_url : c.media_url)
-              : [post.media_url];
+            // Build the list of media to click through in the lightbox —
+            // videos stay real <video> elements so PiP/floating player still works
+            const galleryItems = isCarousel && children.length > 0
+              ? children.map(c => c.media_type === 'VIDEO'
+                  ? { type: 'video', src: c.media_url, poster: c.thumbnail_url }
+                  : { type: 'image', src: c.media_url })
+              : [{ type: 'image', src: post.media_url }];
 
-            card.addEventListener('click', () => openLightbox(galleryImages, 0));
+            card.addEventListener('click', () => openLightbox(galleryItems, 0));
           }
 
           card.addEventListener('mouseenter', () => showCaption(post));
