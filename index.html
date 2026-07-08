@@ -79,6 +79,8 @@
       aspect-ratio: 1 / 1;
       object-fit: cover;
       display: block;
+      outline: 1px solid rgba(255,255,255,0.18);
+      outline-offset: -1px;
     }
     .play-icon {
       position: absolute;
@@ -107,6 +109,17 @@
       height: 22px;
       fill: #f0f0f0;
       margin-left: 3px;
+    }
+    .stack-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0,0,0,0.6);
+      color: #f0f0f0;
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 10px;
+      pointer-events: none;
     }
     .status {
       text-align: left;
@@ -203,10 +216,44 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      z-index: 2;
     }
     .lightbox-close:hover {
       color: #4ec9b0;
       border-color: #4ec9b0;
+    }
+    .lightbox-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #d4d4d4;
+      font-size: 1.4rem;
+      cursor: pointer;
+      border: 1px solid #333;
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.4);
+      z-index: 2;
+      user-select: none;
+    }
+    .lightbox-arrow:hover {
+      color: #4ec9b0;
+      border-color: #4ec9b0;
+    }
+    .lightbox-prev { left: 20px; }
+    .lightbox-next { right: 20px; }
+    .lightbox-counter {
+      position: absolute;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #888;
+      font-size: 0.8rem;
+      letter-spacing: 1px;
     }
   </style>
 </head>
@@ -231,10 +278,13 @@
     </div>
   </div>
 
-  <!-- Lightbox for enlarged photo view -->
+  <!-- Lightbox for enlarged photo view, with click-through for carousel albums -->
   <div class="lightbox" id="lightbox">
     <div class="lightbox-close" id="lightboxClose">&times;</div>
+    <div class="lightbox-arrow lightbox-prev" id="lightboxPrev">&#10094;</div>
     <img id="lightboxImg" src="" alt="">
+    <div class="lightbox-arrow lightbox-next" id="lightboxNext">&#10095;</div>
+    <div class="lightbox-counter" id="lightboxCounter"></div>
   </div>
 
   <script>
@@ -245,6 +295,53 @@
       const lightbox = document.getElementById('lightbox');
       const lightboxImg = document.getElementById('lightboxImg');
       const lightboxClose = document.getElementById('lightboxClose');
+      const lightboxPrev = document.getElementById('lightboxPrev');
+      const lightboxNext = document.getElementById('lightboxNext');
+      const lightboxCounter = document.getElementById('lightboxCounter');
+
+      let currentImages = [];
+      let currentIndex = 0;
+
+      function renderLightboxImage() {
+        lightboxImg.src = currentImages[currentIndex];
+        const multi = currentImages.length > 1;
+        lightboxPrev.style.display = multi ? 'flex' : 'none';
+        lightboxNext.style.display = multi ? 'flex' : 'none';
+        lightboxCounter.textContent = multi ? (currentIndex + 1) + ' / ' + currentImages.length : '';
+      }
+
+      function openLightbox(images, startIndex) {
+        currentImages = images;
+        currentIndex = startIndex || 0;
+        renderLightboxImage();
+        lightbox.classList.add('open');
+      }
+      function closeLightbox() {
+        lightbox.classList.remove('open');
+        lightboxImg.src = '';
+        currentImages = [];
+      }
+      function showPrev() {
+        currentIndex = (currentIndex - 1 + currentImages.length) % currentImages.length;
+        renderLightboxImage();
+      }
+      function showNext() {
+        currentIndex = (currentIndex + 1) % currentImages.length;
+        renderLightboxImage();
+      }
+
+      lightboxClose.addEventListener('click', closeLightbox);
+      lightboxPrev.addEventListener('click', (e) => { e.stopPropagation(); showPrev(); });
+      lightboxNext.addEventListener('click', (e) => { e.stopPropagation(); showNext(); });
+      lightbox.addEventListener('click', (e) => {
+        if (e.target === lightbox) closeLightbox();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (!lightbox.classList.contains('open')) return;
+        if (e.key === 'Escape') closeLightbox();
+        if (e.key === 'ArrowLeft') showPrev();
+        if (e.key === 'ArrowRight') showNext();
+      });
 
       function showCaption(post) {
         if (!post.caption) {
@@ -262,19 +359,6 @@
         consoleBody.innerHTML = '<span class="placeholder">// hover a post to inspect its caption</span>';
       }
 
-      function openLightbox(src) {
-        lightboxImg.src = src;
-        lightbox.classList.add('open');
-      }
-      function closeLightbox() {
-        lightbox.classList.remove('open');
-        lightboxImg.src = '';
-      }
-      lightboxClose.addEventListener('click', closeLightbox);
-      lightbox.addEventListener('click', (e) => {
-        if (e.target === lightbox) closeLightbox();
-      });
-
       try {
         // Cache-bust so browsers don't serve a stale copy of the JSON
         const res = await fetch('data/posts.json?_=' + Date.now());
@@ -291,6 +375,8 @@
 
         posts.forEach(post => {
           const isVideo = post.media_type === 'VIDEO';
+          const isCarousel = post.media_type === 'CAROUSEL_ALBUM';
+          const children = (post.children && post.children.data) ? post.children.data : [];
           let card;
 
           if (isVideo) {
@@ -322,17 +408,34 @@
             });
             video.addEventListener('pause', () => card.classList.remove('is-playing'));
           } else {
-            // Photos: click to enlarge in a lightbox instead of linking out
+            // Photos and carousel albums: click to enlarge in a lightbox instead of linking out
             card = document.createElement('div');
             card.className = 'post';
 
+            // Cover image: for carousels, use the first child's image/thumbnail
+            const coverSrc = isCarousel && children.length > 0
+              ? (children[0].media_type === 'VIDEO' ? children[0].thumbnail_url : children[0].media_url)
+              : post.media_url;
+
             const img = document.createElement('img');
-            img.src = post.media_url;
+            img.src = coverSrc;
             img.alt = post.caption ? post.caption.slice(0, 60) : 'Instagram post';
             img.loading = 'lazy';
             card.appendChild(img);
 
-            card.addEventListener('click', () => openLightbox(post.media_url));
+            if (isCarousel && children.length > 1) {
+              const stackBadge = document.createElement('div');
+              stackBadge.className = 'stack-badge';
+              stackBadge.textContent = '1/' + children.length;
+              card.appendChild(stackBadge);
+            }
+
+            // Build the list of images to click through in the lightbox
+            const galleryImages = isCarousel && children.length > 0
+              ? children.map(c => c.media_type === 'VIDEO' ? c.thumbnail_url : c.media_url)
+              : [post.media_url];
+
+            card.addEventListener('click', () => openLightbox(galleryImages, 0));
           }
 
           card.addEventListener('mouseenter', () => showCaption(post));
@@ -343,325 +446,6 @@
 
       } catch (err) {
         statusEl.textContent = '// could not load the feed right now. please try again later.';
-        console.error(err);
-      }
-    }
-
-    loadFeed();
-  </script>
-
-</body>
-</html><!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>alles-schick</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 1000px;
-      margin: 40px auto;
-      padding: 0 20px;
-      background: #000;
-      color: #d4d4d4;
-    }
-    h1 {
-      text-align: left;
-      font-weight: 600;
-      color: #f0f0f0;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 16px;
-      margin-top: 30px;
-    }
-    .post {
-      position: relative;
-      background: #111;
-      border: 1px solid #262626;
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-      text-decoration: none;
-      color: inherit;
-      display: block;
-      transition: transform 0.15s ease, border-color 0.15s ease;
-    }
-    .post:hover {
-      transform: translateY(-3px);
-      border-color: #444;
-    }
-    .post img, .post video {
-      width: 100%;
-      aspect-ratio: 1 / 1;
-      object-fit: cover;
-      display: block;
-    }
-    .caption {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: flex-end;
-      padding: 12px;
-      font-size: 0.85rem;
-      line-height: 1.3;
-      color: #f0f0f0;
-      background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0) 100%);
-      opacity: 0;
-      transition: opacity 0.2s ease;
-      overflow: hidden;
-      pointer-events: none;
-    }
-    .post:hover .caption {
-      opacity: 1;
-    }
-    .status {
-      text-align: center;
-      color: #888;
-      margin-top: 40px;
-    }
-    .play-icon {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 56px;
-      height: 56px;
-      border-radius: 50%;
-      background: rgba(0,0,0,0.55);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-      pointer-events: none;
-    }
-    .post:hover .play-icon {
-      opacity: 1;
-    }
-    .post.is-playing .play-icon {
-      opacity: 0;
-    }
-    .play-icon svg {
-      width: 22px;
-      height: 22px;
-      fill: #f0f0f0;
-      margin-left: 3px;
-    }
-  </style>
-</head>
-<body>
-
-  <h1>alles-schick-snippets</h1>
-  <div id="feed" class="grid"></div>
-  <p id="status" class="status">Loading posts...</p>
-
-  <script>
-    async function loadFeed() {
-      const statusEl = document.getElementById('status');
-      const feedEl = document.getElementById('feed');
-
-      try {
-        // Cache-bust so browsers don't serve a stale copy of the JSON
-        const res = await fetch('data/posts.json?_=' + Date.now());
-        if (!res.ok) throw new Error('Could not load posts.json');
-        const json = await res.json();
-        const posts = json.data || [];
-
-        if (posts.length === 0) {
-          statusEl.textContent = 'No posts yet — the feed updates automatically once the fetch action has run.';
-          return;
-        }
-
-        statusEl.remove();
-
-        posts.forEach(post => {
-          const isVideo = post.media_type === 'VIDEO';
-          let card;
-
-          if (isVideo) {
-            // Inline playable video instead of linking out
-            card = document.createElement('div');
-            card.className = 'post';
-
-            const video = document.createElement('video');
-            video.src = post.media_url;
-            video.poster = post.thumbnail_url || '';
-            video.preload = 'metadata';
-            video.playsInline = true;
-            video.loop = true;
-            card.appendChild(video);
-
-            const playIcon = document.createElement('div');
-            playIcon.className = 'play-icon';
-            playIcon.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
-            card.appendChild(playIcon);
-
-            card.addEventListener('click', () => {
-              if (video.paused) {
-                video.play();
-                card.classList.add('is-playing');
-              } else {
-                video.pause();
-                card.classList.remove('is-playing');
-              }
-            });
-            video.addEventListener('pause', () => card.classList.remove('is-playing'));
-          } else {
-            // Photos still link out to the post on Instagram
-            card = document.createElement('a');
-            card.href = post.permalink;
-            card.target = '_blank';
-            card.rel = 'noopener noreferrer';
-            card.className = 'post';
-
-            const img = document.createElement('img');
-            img.src = post.media_url;
-            img.alt = post.caption ? post.caption.slice(0, 60) : 'Instagram post';
-            img.loading = 'lazy';
-            card.appendChild(img);
-          }
-
-          if (post.caption) {
-            const cap = document.createElement('div');
-            cap.className = 'caption';
-            cap.textContent = post.caption;
-            card.appendChild(cap);
-          }
-
-          feedEl.appendChild(card);
-        });
-
-      } catch (err) {
-        statusEl.textContent = 'Could not load the feed right now. Please try again later.';
-        console.error(err);
-      }
-    }
-
-    loadFeed();
-  </script>
-
-</body>
-</html><!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>alles-schick/title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 1000px;
-      margin: 40px auto;
-      padding: 0 20px;
-      background: #000;
-      color: #d4d4d4;
-    }
-    h1 {
-      text-align: center;
-      font-weight: 600;
-      color: #f0f0f0;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 16px;
-      margin-top: 30px;
-    }
-    .post {
-      background: #111;
-      border: 1px solid #262626;
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-      text-decoration: none;
-      color: inherit;
-      display: block;
-      transition: transform 0.15s ease, border-color 0.15s ease;
-    }
-    .post:hover {
-      transform: translateY(-3px);
-      border-color: #444;
-    }
-    .post img, .post video {
-      width: 100%;
-      aspect-ratio: 1 / 1;
-      object-fit: cover;
-      display: block;
-    }
-    .caption {
-      padding: 10px 12px;
-      font-size: 0.85rem;
-      line-height: 1.3;
-      max-height: 3.9em;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #b0b0b0;
-    }
-    .status {
-      text-align: center;
-      color: #888;
-      margin-top: 40px;
-    }
-  </style>
-</head>
-<body>
-
-  <h1>alles-schick</h1>
-  <div id="feed" class="grid"></div>
-  <p id="status" class="status">Loading posts...</p>
-
-  <script>
-    async function loadFeed() {
-      const statusEl = document.getElementById('status');
-      const feedEl = document.getElementById('feed');
-
-      try {
-        // Cache-bust so browsers don't serve a stale copy of the JSON
-        const res = await fetch('data/posts.json?_=' + Date.now());
-        if (!res.ok) throw new Error('Could not load posts.json');
-        const json = await res.json();
-        const posts = json.data || [];
-
-        if (posts.length === 0) {
-          statusEl.textContent = 'No posts yet — the feed updates automatically once the fetch action has run.';
-          return;
-        }
-
-        statusEl.remove();
-
-        posts.forEach(post => {
-          const a = document.createElement('a');
-          a.href = post.permalink;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          a.className = 'post';
-
-          // Videos: show the thumbnail instead of the video file itself
-          const imgSrc = post.media_type === 'VIDEO'
-            ? (post.thumbnail_url || post.media_url)
-            : post.media_url;
-
-          const img = document.createElement('img');
-          img.src = imgSrc;
-          img.alt = post.caption ? post.caption.slice(0, 60) : 'Instagram post';
-          img.loading = 'lazy';
-          a.appendChild(img);
-
-          if (post.caption) {
-            const cap = document.createElement('div');
-            cap.className = 'caption';
-            cap.textContent = post.caption;
-            a.appendChild(cap);
-          }
-
-          feedEl.appendChild(a);
-        });
-
-      } catch (err) {
-        statusEl.textContent = 'Could not load the feed right now. Please try again later.';
         console.error(err);
       }
     }
