@@ -441,7 +441,7 @@
         consoleBody.innerHTML = '<span class="placeholder">// hover a post to inspect its caption</span>';
       }
 
-      const pipSupported = document.pictureInPictureEnabled;
+      const pipSupported = typeof document.createElement('video').requestPictureInPicture === 'function';
 
       function makePipButton(video) {
         const btn = document.createElement('div');
