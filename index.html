@@ -60,27 +60,23 @@
     .post {
       position: relative;
       background: #111;
-      border: 1px solid #262626;
-      border-radius: 6px;
       overflow: hidden;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
       text-decoration: none;
       color: inherit;
       display: block;
       cursor: pointer;
-      transition: transform 0.15s ease, border-color 0.15s ease;
+      transition: transform 0.15s ease;
     }
     .post:hover {
       transform: translateY(-3px);
-      border-color: #4ec9b0;
     }
     .post img, .post video {
       width: 100%;
       aspect-ratio: 1 / 1;
       object-fit: cover;
       display: block;
-      outline: 2px solid rgba(255,255,255,0.18);
-      outline-offset: -5px;
+      outline: 1px solid rgba(255,255,255,0.25);
+      outline-offset: -8px;
     }
     .play-icon {
       position: absolute;
