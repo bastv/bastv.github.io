@@ -21,22 +21,47 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
         run: |
           set -e
-          FIELDS="id,caption,media_type,media_url,permalink,thumbnail_url,timestamp"
-          URL="https://graph.instagram.com/me/media?fields=${FIELDS}&limit=12&access_token=${IG_ACCESS_TOKEN}"
-
-          echo "Fetching posts..."
-          RESPONSE=$(curl -s "$URL")
-
-          # Basic sanity check: bail out loudly if Instagram returned an error
-          if echo "$RESPONSE" | grep -q '"error"'; then
-            echo "Instagram API returned an error:"
-            echo "$RESPONSE"
-            exit 1
-          fi
+          FIELDS="id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,children{media_url,media_type,thumbnail_url}"
+          URL="https://graph.instagram.com/me/media?fields=${FIELDS}&limit=100&access_token=${IG_ACCESS_TOKEN}"
 
           mkdir -p data
-          echo "$RESPONSE" > data/posts.json
-          echo "Saved $(echo "$RESPONSE" | grep -o '"id"' | wc -l) posts to data/posts.json"
+          echo '{"data":[]}' > data/posts.json
+
+          PAGE=1
+          PREV_URL=""
+          MAX_PAGES=20
+          while [ -n "$URL" ] && [ "$URL" != "null" ] && [ "$PAGE" -le "$MAX_PAGES" ]; do
+            if [ "$URL" == "$PREV_URL" ]; then
+              echo "Next-page URL repeated itself, stopping to avoid a loop."
+              break
+            fi
+
+            echo "Fetching page $PAGE..."
+            RESPONSE=$(curl -s "$URL")
+
+            if echo "$RESPONSE" | grep -q '"error"'; then
+              echo "Instagram API returned an error:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            # Merge this page's posts into the accumulated file
+            echo "$RESPONSE" | jq -c '.data // []' > page.json
+            jq -s '{data: (.[0].data + .[1])}' data/posts.json page.json > merged.json
+            mv merged.json data/posts.json
+
+            PREV_URL="$URL"
+            URL=$(echo "$RESPONSE" | jq -r '.paging.next // empty')
+            PAGE=$((PAGE + 1))
+          done
+
+          # Deduplicate by post id (order-preserving), then sort newest-first
+          # to guarantee it matches the order shown on your Instagram profile
+          jq -c '{data: (.data | unique_by(.id) | sort_by(.timestamp) | reverse)}' data/posts.json > deduped.json
+          mv deduped.json data/posts.json
+
+          rm -f page.json
+          echo "Saved $(jq '.data | length' data/posts.json) posts to data/posts.json"
 
       - name: Commit updated posts.json
         run: |
@@ -44,4 +69,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/posts.json
           git diff --staged --quiet || git commit -m "Update Instagram posts feed"
+          git pull --rebase origin main
           git push
