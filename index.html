@@ -143,14 +143,12 @@
       fill: #f0f0f0;
     }
     .lightbox .pip-btn {
-      top: 20px;
-      right: 84px;
       opacity: 1;
       border: 1px solid #333;
       border-radius: 50%;
-      width: 40px;
-      height: 40px;
-      background: rgba(0,0,0,0.4);
+      width: 36px;
+      height: 36px;
+      background: rgba(0,0,0,0.5);
     }
     .lightbox .pip-btn:hover {
       border-color: #4ec9b0;
@@ -367,16 +365,26 @@
         const item = currentItems[currentIndex];
 
         if (item.type === 'video') {
+          const wrapper = document.createElement('div');
+          wrapper.style.position = 'relative';
+          wrapper.style.display = 'inline-block';
+
           const video = document.createElement('video');
           video.src = item.src;
           if (item.poster) video.poster = item.poster;
           video.controls = true;
           video.autoplay = true;
           video.playsInline = true;
-          lightboxMedia.appendChild(video);
+          wrapper.appendChild(video);
+
           if (pipSupported) {
-            lightboxMedia.appendChild(makePipButton(video));
+            const btn = makePipButton(video);
+            btn.style.top = '8px';
+            btn.style.right = '8px';
+            wrapper.appendChild(btn);
           }
+
+          lightboxMedia.appendChild(wrapper);
         } else {
           const img = document.createElement('img');
           img.src = item.src;
