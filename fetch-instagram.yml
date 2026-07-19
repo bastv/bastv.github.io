@@ -21,7 +21,7 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
         run: |
           set -e
-          FIELDS="id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,children{media_url,media_type,thumbnail_url}"
+          FIELDS="id,caption,media_type,media_url,permalink,thumbnail_url,timestamp"
           URL="https://graph.instagram.com/me/media?fields=${FIELDS}&limit=100&access_token=${IG_ACCESS_TOKEN}"
 
           mkdir -p data
@@ -62,6 +62,33 @@ jobs:
 
           rm -f page.json
           echo "Saved $(jq '.data | length' data/posts.json) posts to data/posts.json"
+
+          # Field-expansion for "children" on the main /media endpoint is
+          # unreliable and often comes back empty, so fetch each carousel
+          # album's children individually via its own dedicated endpoint.
+          CHILD_FIELDS="id,media_type,media_url,thumbnail_url"
+          CAROUSEL_IDS=$(jq -r '.data[] | select(.media_type == "CAROUSEL_ALBUM") | .id' data/posts.json)
+
+          for CID in $CAROUSEL_IDS; do
+            echo "Fetching children for carousel $CID..."
+            CHILD_RESPONSE=$(curl -s "https://graph.instagram.com/${CID}/children?fields=${CHILD_FIELDS}&access_token=${IG_ACCESS_TOKEN}")
+
+            if echo "$CHILD_RESPONSE" | grep -q '"error"'; then
+              echo "Warning: failed to fetch children for $CID, leaving it without children"
+              echo "$CHILD_RESPONSE"
+              continue
+            fi
+
+            # Inject the fetched children into the matching post in posts.json
+            echo "$CHILD_RESPONSE" > child.json
+            jq --arg cid "$CID" --slurpfile child child.json '
+              .data |= map(if .id == $cid then .children = $child[0] else . end)
+            ' data/posts.json > updated.json
+            mv updated.json data/posts.json
+          done
+
+          rm -f child.json
+          echo "Done fetching carousel children."
 
       - name: Commit updated posts.json
         run: |
